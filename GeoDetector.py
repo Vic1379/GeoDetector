@@ -2,50 +2,60 @@ import sys, random, os
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import Qt
 
-import numpy as np, torch as trc, matplotlib.pyplot as plt
+import numpy as np, torch as trc
 import rasterio
 from osgeo import gdal
+
+from PIL import Image
 
 from app_base_UI import Ui_MainWindow
 
 PATH = os.path.dirname(os.path.abspath(__file__))
 
 def open_SRC():
-    '''filePath, _ = QtWidgets.QFileDialog.getOpenFileName(window, 'Open Image', 'Desktop',
+    '''filePath, _ = QtWidgets.QFileDialog.getOpenFileName(window, 'Open Image', os.path.expanduser('~/Desktop'),
         'PNG(*.png);;JPEG(*.jpg *.jpeg);;All Files(*.*)')'''
-    filePath = QtWidgets.QFileDialog.getExistingDirectory(window, 'Выберите директорию для сканирования', 'Desktop')
+    filePath = QtWidgets.QFileDialog.getExistingDirectory(window, 'Выберите корневую директорию поиска', os.path.expanduser('~/Desktop'))
     if filePath:
-        ui.line_strSrc.setText(filePath)
+        if ui.tabWidget.currentIndex() == 0:
+            ui.line_strSrc.setText(filePath)
+        else:
+            ui.line_strSrc_2.setText(filePath)
 
 def scan_SRC():
-    path, files = ui.line_strSrc.text(), []
+    if ui.tabWidget.currentIndex() == 0:
+        path, lst, grv, cb = ui.line_strSrc.text(), ui.list_foundImgs, ui.graphicsView, ui.cb_scanSubs
+    else:
+        path, lst, grv, cb = ui.line_strSrc_2.text(), ui.list_foundImgs_2, ui.graphicsView_2, ui.cb_scanSubs_2
+    
     if os.path.isdir(path):
-        model.removeRows(0, model.rowCount())
-        # ui.list_foundImgs.clear()
-        if ui.cb_scanSubs.isChecked():
+        files = []
+        if cb.isChecked():
             for content in os.walk(path):
                 for file in content[2]:
-                    if file[-11:] == '.PAN.L2.tif':
+                    if file[-4:] == '.tif' or file[-5:] == '.tiff':
                         files.append(os.path.join(content[0], file))
         else:
             for file in os.listdir(path):
-                if file[-11:] == '.PAN.L2.tif':
+                if file[-4:] == '.tif' or file[-5:] == '.tiff':
                     files.append(os.path.join(path, file))
         
         if len(files) == 0:
             QtWidgets.QMessageBox.information(window, 'Результаты сканирования', 'Файлы не найдены...           ')
         else:
+            grv.setScene(QtWidgets.QGraphicsScene())
+            lst.model().clear()
+
             for file in files:
                 item = QtGui.QStandardItem(file)
-                item.setCheckable(True)
                 item.setEditable(False)
+                item.setCheckable(True)
                 item.setCheckState(2)
-                # item.clicked.connect(lambda: show_IMG(item.text()))
-                model.appendRow(item)
+                lst.model().appendRow(item)
             
-            if str(len(files))[-1] == '1':
-                QtWidgets.QMessageBox.information(window, 'Результаты сканирования', 'В результате сканирования был найден '+str(len(files))+' файл.')
-            elif str(len(files))[-1] in ('2', '3', '4'):
+            if len(files) == 1:
+                QtWidgets.QMessageBox.information(window, 'Результаты сканирования', 'В результате сканирования был найден 1 файл.')
+            elif str(len(files))[-1] in ('2', '3', '4') and str(len(files))[-2:] not in ('12', '13', '14'):
                 QtWidgets.QMessageBox.information(window, 'Результаты сканирования', 'В результате сканирования было найдено '+str(len(files))+' файла.')
             else:
                 QtWidgets.QMessageBox.information(window, 'Результаты сканирования', 'В результате сканирования было найдено '+str(len(files))+' файлов.')
@@ -53,22 +63,33 @@ def scan_SRC():
         QtWidgets.QMessageBox.warning(window, 'Ошибка сканирования', 'Такой директории не существует...')
 
 def show_IMG():
-    # add scaling
-    image = QtGui.QImage(ui.list_foundImgs.selectedIndexes()[0].data())
-
-    vp_w = ui.graphicsView.width()-30
-    if image.width() > vp_w:
-        pixmap = QtGui.QPixmap.fromImage(image).scaled(vp_w, vp_w)
+    ###############
+    # add scaling #
+    ###############
+    if ui.tabWidget.currentIndex() == 0:
+        lst, grv = ui.list_foundImgs, ui.graphicsView
     else:
-        pixmap = QtGui.QPixmap.fromImage(image)
-    
-    ui.graphicsView.setScene(QtWidgets.QGraphicsScene())
-    ui.graphicsView.scene().addPixmap(pixmap)
+        lst, grv = ui.list_foundImgs_2, ui.graphicsView_2
+
+    if len(lst.selectedIndexes()) > 0:
+        image = QtGui.QImage(lst.selectedIndexes()[0].data())
+
+        vp_w = grv.width()-30
+        if image.width() > vp_w:
+            pixmap = QtGui.QPixmap.fromImage(image).scaled(vp_w, vp_w)
+        else:
+            pixmap = QtGui.QPixmap.fromImage(image)
+        
+        grv.setScene(QtWidgets.QGraphicsScene())
+        grv.scene().addPixmap(pixmap)
 
 def set_OUT():
-    filePath = QtWidgets.QFileDialog.getExistingDirectory(window, 'Выберите директорию для записи результатов нарезки', 'Desktop')
+    filePath = QtWidgets.QFileDialog.getExistingDirectory(window, 'Выберите корневую директорию для записи результатов', os.path.expanduser('~/Desktop'))
     if filePath:
-        ui.line_strWrite.setText(filePath)
+        if ui.tabWidget.currentIndex() == 0:
+            ui.line_strWrite.setText(filePath)
+        else:
+            ui.line_strWrite_2.setText(filePath)
 
 def cut_imgs():
     path_base = ui.line_strWrite.text()
@@ -144,6 +165,7 @@ def cut_imgs():
                         file.write(str(cut[2][5])+'\n')
                     
                     cut_ind += 1
+            QtWidgets.QMessageBox.information(window, 'Готово!', 'Подготовка фрагментов завершена. Результаты сохранены в следующей директории:\n'+path_base)
         else:
             QtWidgets.QMessageBox.warning(window, 'Ошибка записи', 'Снимки не выбраны...')
     else:
@@ -153,23 +175,34 @@ app = QtWidgets.QApplication(sys.argv)
 window = QtWidgets.QMainWindow()
 ui = Ui_MainWindow()
 ui.setupUi(window)
+ui.tabWidget.setCurrentIndex(0)
+ui.tabWidget.setTabEnabled(1, False)
+ui.tabWidget.setTabEnabled(2, False)
 
-model = QtGui.QStandardItemModel()
-ui.list_foundImgs.setModel(model)
-# ui.list_foundImgs.clicked.connect(show_IMG)
-# model.itemChanged.connect(show_IMG)
+# TAB_1 setup:
+ui.list_foundImgs.setModel(QtGui.QStandardItemModel())
 ui.list_foundImgs.selectionModel().selectionChanged.connect(show_IMG)
 
-preview_scene = QtWidgets.QGraphicsScene()
+ui.graphicsView.setScene(QtWidgets.QGraphicsScene())
 ui.graphicsView.setInteractive(True)
-ui.graphicsView.setScene(preview_scene)
 ui.graphicsView.setDragMode(1)
-# print(ui.graphicsView.width())
 
 ui.btn_findSrc.clicked.connect(open_SRC)
 ui.btn_startScan.clicked.connect(scan_SRC)
 ui.btn_findWloc.clicked.connect(set_OUT)
 ui.btn_start.clicked.connect(cut_imgs)
+
+# TAB_2 setup:
+ui.list_foundImgs_2.setModel(QtGui.QStandardItemModel())
+ui.list_foundImgs_2.selectionModel().selectionChanged.connect(show_IMG)
+
+ui.graphicsView_2.setScene(QtWidgets.QGraphicsScene())
+ui.graphicsView_2.setInteractive(True)
+ui.graphicsView_2.setDragMode(1)
+
+ui.btn_findSrc_2.clicked.connect(open_SRC)
+ui.btn_startScan_2.clicked.connect(scan_SRC)
+ui.btn_findWloc_2.clicked.connect(set_OUT)
 
 window.show()
 sys.exit(app.exec_())
