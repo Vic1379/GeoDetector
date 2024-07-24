@@ -37,22 +37,27 @@ class Worker_CUT(QtCore.QObject):
 			top_cords = (image.bounds[0], image.bounds[3])
 			img_data = np.squeeze(image.read())
 
-			# print(img_data.shape)
-			height, width = img_data.shape
+			print(img_data.shape)
+			if len(img_data.shape) == 3:
+				chn, height, width = img_data.shape
+				img_data = img_data[:3].transpose(1, 2, 0)
+			else:
+				height, width = img_data.shape
+			
 			h_ost, w_ost = height%h, width%w
-
 			if h_ost != 0:
 				img_data = img_data[h_ost//2:-h_ost//2]
 			if w_ost != 0:
 				img_data = img_data[:, w_ost//2:-w_ost//2]
-			# print(img_data.shape)
+			print(img_data.shape)
+			print(list(tf))
 
 			cuts = []
-			for i in range(img_data.shape[0]//h):
-				for j in range(img_data.shape[1]//w):
+			for i in range(height//h):
+				for j in range(width//w):
 					tf_local = list(tf)
-					tf_local[2] = top_cords[0] + (j*w+w_ost//2)*tf[0]+1.05
-					tf_local[5] = top_cords[1] - (i*h+h_ost//2)*tf[0]-1.05
+					tf_local[2] = top_cords[0] + (j*w+w_ost//2)*tf[0] + tf[0]/2
+					tf_local[5] = top_cords[1] - (i*h+h_ost//2)*tf[0] - tf[0]/2
 					
 					cut = img_data[i*h:(i+1)*h, j*w:(j+1)*w]
 					if ui.cb_filter.isChecked():
@@ -69,8 +74,8 @@ class Worker_CUT(QtCore.QObject):
 			
 			for i, cut in enumerate(cuts):
 				output = os.path.join(path, str(i)+'_cut.jpg')
-				
 				# print(cut)
+
 				img = Image.fromarray(cut[0])
 				img.save(output)
 				'''driver = gdal.GetDriverByName('GTiff')
