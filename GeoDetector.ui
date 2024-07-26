@@ -22,7 +22,7 @@
 QTabWidget::tab-bar{alignment: center;}</string>
       </property>
       <property name="currentIndex">
-       <number>0</number>
+       <number>1</number>
       </property>
       <widget class="QWidget" name="tab_start">
        <attribute name="title">
@@ -519,7 +519,13 @@ QTabWidget::tab-bar{alignment: center;}</string>
                   <item>
                    <layout class="QHBoxLayout" name="horizontalLayout_6">
                     <item>
-                     <widget class="QSpinBox" name="sb_thld">
+                     <widget class="QSpinBox" name="sb_thld_cls">
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
                       <property name="maximum">
                        <number>100</number>
                       </property>
@@ -531,21 +537,41 @@ QTabWidget::tab-bar{alignment: center;}</string>
                     <item>
                      <widget class="QLabel" name="label_thld">
                       <property name="text">
-                       <string>Пороговое значение для классификации снимков</string>
+                       <string>Пороговое значение классификации</string>
                       </property>
                      </widget>
                     </item>
                    </layout>
                   </item>
                   <item>
-                   <widget class="QCheckBox" name="cb_segIsFiltered">
-                    <property name="text">
-                     <string>Сегментировать только отсортированные снимки</string>
-                    </property>
-                    <property name="checked">
-                     <bool>true</bool>
-                    </property>
-                   </widget>
+                   <layout class="QHBoxLayout" name="horizontalLayout_5">
+                    <item>
+                     <widget class="QSpinBox" name="sb_thld_seg">
+                      <property name="enabled">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="maximum">
+                       <number>100</number>
+                      </property>
+                      <property name="value">
+                       <number>50</number>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="label_5">
+                      <property name="text">
+                       <string>Пороговое значение сегментации    </string>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
                   </item>
                  </layout>
                 </item>
@@ -624,28 +650,17 @@ QTabWidget::tab-bar{alignment: center;}</string>
     <property name="title">
      <string>Меню</string>
     </property>
-    <addaction name="action_open"/>
+    <addaction name="act_opt"/>
+    <addaction name="act_help"/>
     <addaction name="separator"/>
-    <addaction name="action_exit"/>
-   </widget>
-   <widget class="QMenu" name="menu_opti">
-    <property name="title">
-     <string>Настройки</string>
-    </property>
-   </widget>
-   <widget class="QMenu" name="menu_info">
-    <property name="title">
-     <string>Справка</string>
-    </property>
+    <addaction name="act_exit"/>
    </widget>
    <addaction name="menu_main"/>
-   <addaction name="menu_opti"/>
-   <addaction name="menu_info"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
-  <action name="action_open">
+  <action name="act_opt">
    <property name="text">
-    <string>Открыть</string>
+    <string>Настройки</string>
    </property>
   </action>
   <action name="action_info">
@@ -653,9 +668,14 @@ QTabWidget::tab-bar{alignment: center;}</string>
     <string>Справка</string>
    </property>
   </action>
-  <action name="action_exit">
+  <action name="act_exit">
    <property name="text">
     <string>Выход</string>
+   </property>
+  </action>
+  <action name="act_help">
+   <property name="text">
+    <string>Справка</string>
    </property>
   </action>
  </widget>

@@ -4,12 +4,14 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 import numpy as np, torch as trc, rasterio
 from osgeo import gdal
 from torchvision import transforms
+from torchvision.utils import save_image
 
 from PIL import Image
 
 from app_ui_main import Ui_MainWindow
+from app_ui_opt import Ui_DialogOptions
 from app_ui_sub import PopUpProgressBar
-from app_nns import ClsNet, processDataset
+from app_nns import ClsNet, SegNet, Encoder, Decoder, ConvBlock, processDataset
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT[-9:] == '_internal': ROOT = os.path.dirname(ROOT)
@@ -17,6 +19,7 @@ if ROOT[-9:] == '_internal': ROOT = os.path.dirname(ROOT)
 THD_CUT, THD_NNS = QtCore.QThread(), QtCore.QThread()
 
 NET_CLS = os.path.join(ROOT, 'MODEL_CLS')
+NET_SEG = os.path.join(ROOT, 'MODEL_SEG')
 SIZE, SHARPNESS = 256, 10
 
 class Worker_CUT(QtCore.QObject):
@@ -127,7 +130,7 @@ class Worker_NNS(QtCore.QObject):
 			transforms.Grayscale(),
 			transforms.RandomAdjustSharpness(SHARPNESS, 1),
 		])
-		n, k = len(self.imgPaths), 1
+		n, k, max_prog_before_seg = len(self.imgPaths), 1, 10
 		if ui.cb_CLS.isChecked() and ui.cb_SEG.isChecked():
 			k = 2
 		
@@ -138,6 +141,7 @@ class Worker_NNS(QtCore.QObject):
 			return
 		self.progress.emit(10)
 
+		sorted_img_paths = []
 		if ui.cb_CLS.isChecked():
 			out = os.path.join(self.path_base, 'CLS')
 			out_txt = os.path.join(out, 'output.txt')
@@ -145,11 +149,15 @@ class Worker_NNS(QtCore.QObject):
 			dt_process = processDataset(self.imgPaths, read_img_trfs)
 			batch_size = min(128, len(dt_process))
 			process_dl = trc.utils.data.DataLoader(dt_process, batch_size)
+
+			n_steps = n // batch_size
+			if n % batch_size != 0:
+				n_steps += 1
 			
 			net = trc.load(NET_CLS)
 			preds, imgNames, imgPaths = trc.tensor([]), [], []
 			for i, batch in enumerate(process_dl):
-				X, names, paths = batch
+				X, names, paths, _ = batch
 				with trc.set_grad_enabled(False):
 					res = net.forward(X).data
 				imgNames += names
@@ -162,7 +170,7 @@ class Worker_NNS(QtCore.QObject):
 					self.aborted.emit()
 					self.thread.quit()
 					return
-				self.progress.emit(10 + int(70/k/(n//batch_size+1)*(i+1)))
+				self.progress.emit(10 + int(70/k / n_steps * (i+1)))
 
 			if os.path.isdir(out): shutil.rmtree(out)
 			os.mkdir(out)
@@ -179,34 +187,111 @@ class Worker_NNS(QtCore.QObject):
 				self.aborted.emit()
 				self.thread.quit()
 				return
-			self.progress.emit(80//k + 5)
+			self.progress.emit(90//k + 3)
 
 			os.mkdir(os.path.join(out, 'No')), os.mkdir(os.path.join(out, 'Yes'))
 			used_0, used_1 = {}, {}
 			for i in res:
-				if i[1] > ui.sb_thld.value()/100:
-					if i[0] not in used_1:
-						to = os.path.join(out, 'Yes', i[0])
-						used_1[i[0]] = 1
-					else:
-						to = os.path.join(out, 'Yes', i[0]+'_'+str(used_1[i[0]]))
+				name, ext = os.path.splitext(i[0])
+				wdt = '.jgw' if ext == '.jpg' else '.tfw'
+				world = os.path.splitext(i[2])[0] + wdt
+				if i[1] > ui.sb_thld_cls.value()/100:
+					if i[0] in used_1:
+						name += '_' + str(used_1[i[0]])
 						used_1[i[0]] += 1
-				else:
-					if i[0] not in used_0:
-						to = os.path.join(out, 'No', i[0])
-						used_0[i[0]] = 1
 					else:
-						to = os.path.join(out, 'No', i[0]+'_'+str(used_0[i[0]]))
+						used_1[i[0]] = 1
+					cls_d = os.path.join(out, 'Yes')
+					sorted_img_paths.append(os.path.join(cls_d, name+ext))
+				else:
+					if i[0] in used_0:
+						name += '_' + str(used_0[i[0]])
 						used_0[i[0]] += 1
-				shutil.copy(i[2], to)
+					else:
+						used_0[i[0]] = 1
+					cls_d = os.path.join(out, 'No')
+				shutil.copy(i[2], os.path.join(cls_d, name+ext))
+				shutil.copy(world, os.path.join(cls_d, name+wdt))
 			
 			app.processEvents()
 			if self.abort_flag:
 				self.aborted.emit()
 				self.thread.quit()
 				return
-			self.progress.emit(80//k + 10)
+			self.progress.emit(90//k + 5)
+			max_prog_before_seg = 50
 		
+		if ui.cb_SEG.isChecked():
+			out = os.path.join(self.path_base, 'SEG')
+			out_imgs, out_masks = os.path.join(out, 'Images'), os.path.join(out, 'Masks')
+
+			if opt_ui.cb_segSorted.isChecked() and ui.cb_CLS.isChecked():
+				dt_process = processDataset(sorted_img_paths, read_img_trfs)
+			else:
+				dt_process = processDataset(self.imgPaths, read_img_trfs)
+			batch_size = min(128, len(dt_process))
+			process_dl = trc.utils.data.DataLoader(dt_process, batch_size)
+
+			n_steps = n // batch_size
+			if n % batch_size != 0:
+				n_steps += 1
+
+			net = trc.load(NET_SEG)
+			# preds, Data  = trc.tensor([]), []
+			preds, imgNames, imgPaths, imgShapes = trc.tensor([]), [], [], []
+			for i, batch in enumerate(process_dl):
+				X, names, paths, shapes = batch
+				with trc.set_grad_enabled(False):
+					res = net.forward(X).data
+				imgNames += names
+				imgPaths += paths
+				imgShapes += shapes
+				if res.dim() == 0: preds = trc.cat([preds, res.reshape(1)])
+				else: preds = trc.cat([preds, res])
+
+				app.processEvents()
+				if self.abort_flag:
+					self.aborted.emit()
+					self.thread.quit()
+					return
+				self.progress.emit(max_prog_before_seg + int(70/k / n_steps * (i+1)))
+
+			if os.path.isdir(out): shutil.rmtree(out)
+			os.mkdir(out), os.mkdir(out_imgs), os.mkdir(out_masks)
+			used, prev_prg = {}, 0
+			for i, name in enumerate(imgNames):
+				shape = (imgShapes[0][i].item(), imgShapes[1][i].item())
+				resize_trf = transforms.Resize(shape, antialias=False)
+				mask = preds[i].clone()
+				if not opt_ui.cb_rawMasks.isChecked():
+					mask = (mask >= ui.sb_thld_seg.value()/100).int()*255.0
+				mask = resize_trf(mask)
+				
+				base, ext = os.path.splitext(name)
+				wdt = '.jgw' if ext == '.jpg' else '.tfw'
+				world = os.path.splitext(imgPaths[i])[0] + wdt
+				if name in used:
+					base += '_' + str(used[name])
+					used[name] += 1
+				else:
+					used[name] = 1
+				img = base + ext
+				sv_path_msk, sv_path_img = os.path.join(out_masks, img), os.path.join(out_imgs, img)
+				save_image(mask, sv_path_msk)
+				shutil.copy(imgPaths[i], sv_path_img)
+				shutil.copy(world, os.path.splitext(sv_path_img)[0]+wdt)
+				shutil.copy(world, os.path.splitext(sv_path_msk)[0]+wdt)
+
+				app.processEvents()
+				if self.abort_flag:
+					self.aborted.emit()
+					self.thread.quit()
+					return
+				prg = 85 + int(15 / len(imgNames) * (i+1))
+				if prg != prev_prg:
+					self.progress.emit(85 + int(15 / len(imgNames) * (i+1)))
+					prev_prg = prg
+
 		print('Done!')
 		self.progress.emit(100)
 		self.finished.emit(str(datetime.timedelta(seconds=int(time.time()-start_time))))
@@ -344,14 +429,10 @@ def net_prc():
 app = QtWidgets.QApplication(sys.argv)
 window = QtWidgets.QMainWindow()
 ui = Ui_MainWindow()
+# ui.opt = Ui_DialogOptions()
 ui.setupUi(window)
 ui.tabWidget.setCurrentIndex(0)
-# ui.tabWidget.setTabEnabled(1, False)
 ui.tabWidget.setTabEnabled(2, False)
-
-# popUp = PopUpProgressBar()
-# ui.btn_start.clicked.connect(popup.start_progress)
-# ui.btn_start_2.clicked.connect(popup.start_progress)
 
 # TAB_1 setup:
 ui.list_foundImgs.setModel(QtGui.QStandardItemModel())
@@ -378,6 +459,16 @@ ui.btn_findSrc_2.clicked.connect(open_SRC)
 ui.btn_startScan_2.clicked.connect(scan_SRC)
 ui.btn_findWloc_2.clicked.connect(set_OUT)
 ui.btn_start_2.clicked.connect(net_prc)
+
+# OPT setup:
+opt_dialog = QtWidgets.QDialog()
+opt_ui = Ui_DialogOptions()
+opt_ui.setupUi(opt_dialog)
+opt_ui.btn_clsOpt.clicked.connect(opt_dialog.hide)
+
+# OTHER:
+ui.act_opt.triggered.connect(opt_dialog.show)
+ui.act_exit.triggered.connect(app.exit)
 
 window.show()
 sys.exit(app.exec_())
