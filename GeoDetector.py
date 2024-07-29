@@ -3,18 +3,19 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 import numpy as np, torch as trc, rasterio
 from osgeo import gdal
+
 from torchvision import transforms
 from torchvision.utils import save_image
-
 from PIL import Image
 
 from app_ui_main import Ui_MainWindow
 from app_ui_opt import Ui_DialogOptions
 from app_ui_sub import PopUpProgressBar
+
 from app_nns import ClsNet, SegNet, Encoder, Decoder, ConvBlock, processDataset
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-if ROOT[-9:] == '_internal': ROOT = os.path.dirname(ROOT)
+if os.path.basename(os.path.normpath(ROOT)) == '_internal': ROOT = os.path.dirname(ROOT)
 
 THD_CUT, THD_NNS = QtCore.QThread(), QtCore.QThread()
 
@@ -33,14 +34,14 @@ class Worker_CUT(QtCore.QObject):
 	def run(self):
 		start_time = time.time()
 		self.progress.emit(1)
-		h, w, cut_ind = ui.sb_height.value(), ui.sb_width.value(), 0
+		h, w = ui.sb_height.value(), ui.sb_width.value()
 		for p, imgPath in enumerate(self.imgPaths):
 			image = rasterio.open(imgPath)
 			tf, crs = image.meta['transform'], image.crs.to_string()
 			top_cords = (image.bounds[0], image.bounds[3])
 			img_data = np.squeeze(image.read())
 
-			print(img_data.shape)
+			# print(img_data.shape)
 			if len(img_data.shape) == 3:
 				chn, height, width = img_data.shape
 				img_data = img_data[:3].transpose(1, 2, 0)
@@ -52,8 +53,8 @@ class Worker_CUT(QtCore.QObject):
 				img_data = img_data[h_ost//2:-h_ost//2]
 			if w_ost != 0:
 				img_data = img_data[:, w_ost//2:-w_ost//2]
-			print(img_data.shape)
-			print(list(tf))
+			# print(img_data.shape)
+			# print(list(tf))
 
 			cuts = []
 			for i in range(height//h):
@@ -77,7 +78,6 @@ class Worker_CUT(QtCore.QObject):
 			
 			for i, cut in enumerate(cuts):
 				output = os.path.join(path, str(i)+'_cut.jpg')
-				# print(cut)
 
 				img = Image.fromarray(cut[0])
 				img.save(output)
@@ -130,7 +130,7 @@ class Worker_NNS(QtCore.QObject):
 			transforms.Grayscale(),
 			transforms.RandomAdjustSharpness(SHARPNESS, 1),
 		])
-		n, k, max_prog_before_seg = len(self.imgPaths), 1, 10
+		n, k, max_prog_before_seg = len(self.imgPaths), 1, 5
 		if ui.cb_CLS.isChecked() and ui.cb_SEG.isChecked():
 			k = 2
 		
@@ -139,7 +139,7 @@ class Worker_NNS(QtCore.QObject):
 			self.aborted.emit()
 			self.thread.quit()
 			return
-		self.progress.emit(10)
+		self.progress.emit(5)
 
 		sorted_img_paths = []
 		if ui.cb_CLS.isChecked():
@@ -170,7 +170,7 @@ class Worker_NNS(QtCore.QObject):
 					self.aborted.emit()
 					self.thread.quit()
 					return
-				self.progress.emit(10 + int(70/k / n_steps * (i+1)))
+				self.progress.emit(5 + int(80/k / n_steps * (i+1)))
 
 			if os.path.isdir(out): shutil.rmtree(out)
 			os.mkdir(out)
@@ -232,12 +232,11 @@ class Worker_NNS(QtCore.QObject):
 			batch_size = min(128, len(dt_process))
 			process_dl = trc.utils.data.DataLoader(dt_process, batch_size)
 
-			n_steps = n // batch_size
-			if n % batch_size != 0:
+			n_steps = len(dt_process) // batch_size
+			if len(dt_process) % batch_size != 0:
 				n_steps += 1
 
 			net = trc.load(NET_SEG)
-			# preds, Data  = trc.tensor([]), []
 			preds, imgNames, imgPaths, imgShapes = trc.tensor([]), [], [], []
 			for i, batch in enumerate(process_dl):
 				X, names, paths, shapes = batch
@@ -254,7 +253,7 @@ class Worker_NNS(QtCore.QObject):
 					self.aborted.emit()
 					self.thread.quit()
 					return
-				self.progress.emit(max_prog_before_seg + int(70/k / n_steps * (i+1)))
+				self.progress.emit(max_prog_before_seg + int(80/k / n_steps * (i+1)))
 
 			if os.path.isdir(out): shutil.rmtree(out)
 			os.mkdir(out), os.mkdir(out_imgs), os.mkdir(out_masks)
@@ -287,9 +286,9 @@ class Worker_NNS(QtCore.QObject):
 					self.aborted.emit()
 					self.thread.quit()
 					return
-				prg = 85 + int(15 / len(imgNames) * (i+1))
+				prg = 90 + int(10 / len(imgNames) * (i+1))
 				if prg != prev_prg:
-					self.progress.emit(85 + int(15 / len(imgNames) * (i+1)))
+					self.progress.emit(prg)
 					prev_prg = prg
 
 		print('Done!')
@@ -429,7 +428,6 @@ def net_prc():
 app = QtWidgets.QApplication(sys.argv)
 window = QtWidgets.QMainWindow()
 ui = Ui_MainWindow()
-# ui.opt = Ui_DialogOptions()
 ui.setupUi(window)
 ui.tabWidget.setCurrentIndex(0)
 ui.tabWidget.setTabEnabled(2, False)

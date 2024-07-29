@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'options.ui'
+# Form implementation generated from reading ui file 'optionsdialog.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.9
 #
@@ -58,7 +58,7 @@ class Ui_DialogOptions(object):
 
     def retranslateUi(self, DialogOptions):
         _translate = QtCore.QCoreApplication.translate
-        DialogOptions.setWindowTitle(_translate("DialogOptions", "Dialog"))
+        DialogOptions.setWindowTitle(_translate("DialogOptions", "Параметры программы"))
         self.label_seg.setText(_translate("DialogOptions", "Сегментация"))
         self.cb_segSorted.setText(_translate("DialogOptions", "Сегментировать только отсортированные снимки"))
         self.cb_rawMasks.setText(_translate("DialogOptions", "Генерировать сырые маски"))
