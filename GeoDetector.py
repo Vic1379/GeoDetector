@@ -1,4 +1,4 @@
-import sys, os, shutil, time, datetime
+import sys, os, shutil, json, time, datetime
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 import numpy as np, torch as trc, rasterio
@@ -14,13 +14,15 @@ from app_ui_sub import PopUpProgressBar
 
 from app_nns import ClsNet, SegNet, Encoder, Decoder, ConvBlock, processDataset
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-if os.path.basename(os.path.normpath(ROOT)) == '_internal': ROOT = os.path.dirname(ROOT)
+ROOT_H = os.path.dirname(os.path.abspath(__file__))
+if os.path.basename(os.path.normpath(ROOT_H)) == '_internal': ROOT = os.path.dirname(ROOT_H)
+else: ROOT = ROOT_H
 
 THD_CUT, THD_NNS = QtCore.QThread(), QtCore.QThread()
 
 NET_CLS = os.path.join(ROOT, 'MODEL_CLS')
 NET_SEG = os.path.join(ROOT, 'MODEL_SEG')
+SETTINGS = os.path.join(ROOT_H, 'settings.json')
 SIZE, SHARPNESS = 256, 10
 
 class Worker_CUT(QtCore.QObject):
@@ -221,11 +223,12 @@ class Worker_NNS(QtCore.QObject):
 			self.progress.emit(90//k + 5)
 			max_prog_before_seg = 50
 		
-		if ui.cb_SEG.isChecked():
+		seg_sorted = opt_ui.cb_segSorted.isChecked() and ui.cb_CLS.isChecked()
+		if ui.cb_SEG.isChecked() and ((seg_sorted and len(sorted_img_paths) > 0) or not seg_sorted):
 			out = os.path.join(self.path_base, 'SEG')
 			out_imgs, out_masks = os.path.join(out, 'Images'), os.path.join(out, 'Masks')
 
-			if opt_ui.cb_segSorted.isChecked() and ui.cb_CLS.isChecked():
+			if seg_sorted:
 				dt_process = processDataset(sorted_img_paths, read_img_trfs)
 			else:
 				dt_process = processDataset(self.imgPaths, read_img_trfs)
@@ -302,12 +305,29 @@ class Worker_NNS(QtCore.QObject):
 def open_SRC():
 	'''filePath, _ = QtWidgets.QFileDialog.getOpenFileName(window, 'Open Image', os.path.expanduser('~/Desktop'),
 		'PNG(*.png);;JPEG(*.jpg *.jpeg);;All Files(*.*)')'''
-	filePath = QtWidgets.QFileDialog.getExistingDirectory(window, 'Выберите корневую директорию поиска', os.path.expanduser('~/Desktop'))
+	if ui.tabWidget.currentIndex() == 0:
+		src_line, opt_key = ui.line_strSrc, 'src_last_1'
+	else:
+		src_line, opt_key = ui.line_strSrc_2, 'src_last_2'
+	
+	def_path = os.path.expanduser('~/Desktop')
+	if opt_ui.comB_srcDef.currentIndex() == 0:
+		with open(SETTINGS, 'r') as f:
+			data = json.load(f)
+			if opt_key in data and os.path.isdir(data[opt_key]):
+				def_path = data[opt_key]
+	elif os.path.isdir(src_line.text()):
+		def_path = src_line.text()
+
+	filePath = QtWidgets.QFileDialog.getExistingDirectory(window, 'Выберите корневую директорию поиска', def_path)
 	if filePath:
-		if ui.tabWidget.currentIndex() == 0:
-			ui.line_strSrc.setText(filePath)
-		else:
-			ui.line_strSrc_2.setText(filePath)
+		src_line.setText(filePath)
+		with open(SETTINGS, 'r') as f:
+			data = json.load(f)
+			data[opt_key] = filePath
+		os.remove(SETTINGS)
+		with open(SETTINGS, 'w') as f:
+			json.dump(data, f)
 
 def scan_SRC():
 	if ui.tabWidget.currentIndex() == 0:
@@ -373,12 +393,29 @@ def show_IMG():
 		grv.scene().addPixmap(pixmap)
 
 def set_OUT():
-	filePath = QtWidgets.QFileDialog.getExistingDirectory(window, 'Выберите корневую директорию для записи результатов', os.path.expanduser('~/Desktop'))
+	if ui.tabWidget.currentIndex() == 0:
+		res_line, opt_key = ui.line_strWrite, 'res_last_1'
+	else:
+		res_line, opt_key = ui.line_strWrite_2, 'res_last_2'
+	
+	def_path = os.path.expanduser('~/Desktop')
+	if opt_ui.comB_srcDef.currentIndex() == 0:
+		with open(SETTINGS, 'r') as f:
+			data = json.load(f)
+			if opt_key in data and os.path.isdir(data[opt_key]):
+				def_path = data[opt_key]
+	elif os.path.isdir(res_line.text()):
+		def_path = res_line.text()
+	
+	filePath = QtWidgets.QFileDialog.getExistingDirectory(window, 'Выберите корневую директорию для записи результатов', def_path)
 	if filePath:
-		if ui.tabWidget.currentIndex() == 0:
-			ui.line_strWrite.setText(filePath)
-		else:
-			ui.line_strWrite_2.setText(filePath)
+		res_line.setText(filePath)
+		with open(SETTINGS, 'r') as f:
+			data = json.load(f)
+			data[opt_key] = filePath
+		os.remove(SETTINGS)
+		with open(SETTINGS, 'w') as f:
+			json.dump(data, f)
 
 def cut_imgs():
 	path_base = ui.line_strWrite.text()
@@ -431,6 +468,10 @@ ui = Ui_MainWindow()
 ui.setupUi(window)
 ui.tabWidget.setCurrentIndex(0)
 ui.tabWidget.setTabEnabled(2, False)
+
+if not os.path.isfile(SETTINGS):
+	with open(SETTINGS, 'w') as f:
+		json.dump({'_init_': 'do not edit this field'}, f)
 
 # TAB_1 setup:
 ui.list_foundImgs.setModel(QtGui.QStandardItemModel())

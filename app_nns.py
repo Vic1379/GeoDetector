@@ -1,4 +1,4 @@
-import torch as trc, cv2
+import numpy as np, torch as trc, cv2
 
 # CLASSIFICATION NET
 
@@ -124,11 +124,18 @@ class processDataset(trc.utils.data.Dataset):
 		return len(self.imgPaths)
 	
 	def __getitem__(self, idx):
-		if self.imgPaths[idx][-4:] == '.tif':
+		# FOR RUS PATHS
+		f = open(self.imgPaths[idx], 'rb')
+		encoded_img = np.frombuffer(f.read(), dtype='uint8')
+		image = cv2.imdecode(encoded_img, cv2.IMREAD_COLOR)
+
+		'''if self.imgPaths[idx][-4:] == '.tif':
 			image = cv2.imread(self.imgPaths[idx], -1)
 		else:
 			image = cv2.imread(self.imgPaths[idx])
-			# image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+			# image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)'''
+		
+		# print(image.shape)
 		imgShape = image.shape
 
 		if self.transforms is not None:
